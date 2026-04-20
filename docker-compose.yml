@@ -1,0 +1,42 @@
+version: "3.9"
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: cc-postgres
+    environment:
+      POSTGRES_DB: ${DB_NAME:-cornercrew}
+      POSTGRES_USER: ${DB_USER:-cornercrew}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-cornercrew}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cornercrew -d cornercrew"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    container_name: cc-backend
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${PORT:-5005}:5005"
+      - "5005:5005"
+#      - "${PORT:-8080}:8080"
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-cornercrew}
+      DB_USER: ${DB_USER:-cornercrew}
+      DB_PASSWORD: ${DB_PASSWORD:-cornercrew}
+      JWT_SECRET: ${JWT_SECRET:-change_me_to_a_long_random_secret_value}
+      TRAFFIC_API_KEY: ${TRAFFIC_API_KEY:-your_tomtom_api_key_here}
+      GEOLOCATION_API_KEY: ${GEOLOCATION_API_KEY:-your_mapbox_api_key_here}
+    restart: unless-stopped
+
+volumes:
+  pgdata: {}

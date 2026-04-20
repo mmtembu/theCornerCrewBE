@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Pre-push hook: compile Java/Kotlin to catch errors before pushing
+
+echo "🔍 Running pre-push checks..."
+
+# Run compilation (fast check for syntax/type errors)
+./gradlew classes testClasses --no-daemon -q 2>&1
+if [ $? -ne 0 ]; then
+    echo "❌ Compilation failed. Push aborted."
+    exit 1
+fi
+
+echo "✅ Pre-push checks passed."
+exit 0

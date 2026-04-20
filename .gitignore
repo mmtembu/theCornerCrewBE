@@ -1,0 +1,27 @@
+# Gradle
+.gradle/
+build/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Environment
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Application
+*.jar
+*.war
+
+# Kiro
+.kiro/
+
+# Misc
+.jqwik-database
+.kiroignore

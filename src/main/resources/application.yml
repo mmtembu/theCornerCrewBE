@@ -1,0 +1,51 @@
+spring:
+  application:
+    name: cornercrew-backend
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:cornercrew}
+    username: ${DB_USER:cornercrew}
+    password: ${DB_PASSWORD:cornercrew}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.spatial.dialect.postgis.PostgisPG10Dialect
+        format_sql: true
+    open-in-view: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
+security:
+  jwt:
+    secret: ${JWT_SECRET:this_is_a_dev_only_secret_change_me_change_me_32_chars_min}
+    access-ttl-ms: 900000
+    refresh-ttl-ms: 1209600000
+
+server:
+  port: ${PORT:8080}
+
+app:
+  traffic:
+    provider: TOMTOM
+    api-key: ${TRAFFIC_API_KEY:}
+    polling-interval-ms: 60000
+    congestion-threshold: 0.7
+    neighborhood:
+      south-lat: -26.305
+      west-lng: 28.145
+      north-lat: -26.285
+      east-lng: 28.165
+  geolocation:
+    provider: MAPBOX
+    api-key: ${GEOLOCATION_API_KEY:}
+    intersection-cache-ttl-hours: 24
+  payout:
+    rating-threshold: 3.0
