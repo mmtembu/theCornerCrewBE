@@ -17,6 +17,7 @@ Thumbs.db
 
 # Application
 *.jar
+!gradle/wrapper/gradle-wrapper.jar
 *.war
 
 # Kiro
