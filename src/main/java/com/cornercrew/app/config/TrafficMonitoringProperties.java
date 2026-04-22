@@ -9,6 +9,7 @@ public class TrafficMonitoringProperties {
     private String apiKey;
     private long pollingIntervalMs = 300000;
     private double congestionThreshold = 0.7;
+    private double freeFlowSpeedKmh = 60.0;
     private Neighborhood neighborhood = new Neighborhood();
 
     public String getProvider() {
@@ -41,6 +42,14 @@ public class TrafficMonitoringProperties {
 
     public void setCongestionThreshold(double congestionThreshold) {
         this.congestionThreshold = congestionThreshold;
+    }
+
+    public double getFreeFlowSpeedKmh() {
+        return freeFlowSpeedKmh;
+    }
+
+    public void setFreeFlowSpeedKmh(double freeFlowSpeedKmh) {
+        this.freeFlowSpeedKmh = freeFlowSpeedKmh;
     }
 
     public Neighborhood getNeighborhood() {

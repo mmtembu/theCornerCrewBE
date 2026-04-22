@@ -3,7 +3,10 @@ package com.cornercrew.app.campaign;
 import com.cornercrew.app.common.InvalidStatusTransitionException;
 import com.cornercrew.app.intersection.Intersection;
 import com.cornercrew.app.intersection.IntersectionRepository;
+import com.cornercrew.app.notification.NotificationService;
 import jakarta.persistence.EntityNotFoundException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -18,13 +21,18 @@ import java.time.OffsetDateTime;
 @Transactional
 public class CampaignServiceImpl implements CampaignService {
 
+    private static final Logger log = LoggerFactory.getLogger(CampaignServiceImpl.class);
+
     private final CampaignRepository campaignRepository;
     private final IntersectionRepository intersectionRepository;
+    private final NotificationService notificationService;
 
     public CampaignServiceImpl(CampaignRepository campaignRepository,
-                               IntersectionRepository intersectionRepository) {
+                               IntersectionRepository intersectionRepository,
+                               NotificationService notificationService) {
         this.campaignRepository = campaignRepository;
         this.intersectionRepository = intersectionRepository;
+        this.notificationService = notificationService;
     }
 
     @Override
@@ -119,6 +127,15 @@ public class CampaignServiceImpl implements CampaignService {
 
         campaign.setStatus(CampaignStatus.OPEN);
         Campaign saved = campaignRepository.save(campaign);
+
+        // Best-effort notification — failure must not roll back the campaign status change
+        try {
+            notificationService.onCampaignOpened(saved);
+        } catch (Exception e) {
+            // Log but don't propagate — notifications are best-effort
+            log.warn("Failed to send notifications for campaign {}: {}", saved.getId(), e.getMessage());
+        }
+
         return toDto(saved);
     }
 

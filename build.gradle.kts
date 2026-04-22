@@ -17,8 +17,6 @@ java {
     }
 }
 
-extra["testcontainers.version"] = "1.21.4"
-
 repositories {
     mavenCentral()
 }
@@ -39,7 +37,6 @@ dependencies {
     // Database
     runtimeOnly("org.postgresql:postgresql:42.7.4")
     implementation("org.flywaydb:flyway-core")
-    implementation("org.flywaydb:flyway-database-postgresql")
     implementation("org.hibernate.orm:hibernate-spatial:6.5.2.Final")
     implementation("com.vladmihalcea:hibernate-types-60:2.21.1")
 
@@ -57,8 +54,8 @@ dependencies {
     // Test
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")
-    testImplementation("org.testcontainers:junit-jupiter:1.21.4")
-    testImplementation("org.testcontainers:postgresql:1.21.4")
+    testImplementation("org.testcontainers:junit-jupiter:1.21.0")
+    testImplementation("org.testcontainers:postgresql:1.21.0")
     testImplementation("net.jqwik:jqwik:1.9.1")
 }
 

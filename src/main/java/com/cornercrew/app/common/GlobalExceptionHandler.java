@@ -88,6 +88,54 @@ public class GlobalExceptionHandler {
                 .body(new ErrorResponse("GEOLOCATION_API_UNAVAILABLE", ex.getMessage(), Map.of()));
     }
 
+    @ExceptionHandler(NotificationNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNotificationNotFound(NotificationNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ErrorResponse("NOTIFICATION_NOT_FOUND", ex.getMessage(), Map.of()));
+    }
+
+    @ExceptionHandler(NotificationOwnershipException.class)
+    public ResponseEntity<ErrorResponse> handleNotificationOwnership(NotificationOwnershipException ex) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(new ErrorResponse("NOTIFICATION_FORBIDDEN", ex.getMessage(), Map.of()));
+    }
+
+    @ExceptionHandler(CampaignNotAcceptingApplicationsException.class)
+    public ResponseEntity<ErrorResponse> handleCampaignNotAcceptingApplications(CampaignNotAcceptingApplicationsException ex) {
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(new ErrorResponse("CAMPAIGN_NOT_ACCEPTING", ex.getMessage(), Map.of()));
+    }
+
+    @ExceptionHandler(CommuteProfileNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleCommuteProfileNotFound(CommuteProfileNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ErrorResponse("COMMUTE_PROFILE_NOT_FOUND", ex.getMessage(), Map.of()));
+    }
+
+    @ExceptionHandler(InvalidCoordinatesException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidCoordinates(InvalidCoordinatesException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(new ErrorResponse("INVALID_COORDINATES", ex.getMessage(), Map.of()));
+    }
+
+    @ExceptionHandler(InvalidTimeWindowException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidTimeWindow(InvalidTimeWindowException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(new ErrorResponse("INVALID_TIME_WINDOW", ex.getMessage(), Map.of()));
+    }
+
+    @ExceptionHandler(RadiusExceedsMaxException.class)
+    public ResponseEntity<ErrorResponse> handleRadiusExceedsMax(RadiusExceedsMaxException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(new ErrorResponse("RADIUS_EXCEEDS_MAX", ex.getMessage(), Map.of()));
+    }
+
+    @ExceptionHandler(LocationRequiredException.class)
+    public ResponseEntity<ErrorResponse> handleLocationRequired(LocationRequiredException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(new ErrorResponse("LOCATION_REQUIRED", ex.getMessage(), Map.of()));
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleMethodArgumentNotValid(MethodArgumentNotValidException ex) {
         Map<String, Object> details = ex.getBindingResult().getFieldErrors().stream()

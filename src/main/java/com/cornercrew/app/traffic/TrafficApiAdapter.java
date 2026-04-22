@@ -1,5 +1,7 @@
 package com.cornercrew.app.traffic;
 
+import java.util.List;
+
 import com.cornercrew.app.common.TrafficApiUnavailableException;
 
 /**
@@ -30,4 +32,19 @@ public interface TrafficApiAdapter {
      * @throws TrafficApiUnavailableException if the provider is unreachable or returns an error
      */
     CongestionData getCongestionData(double latitude, double longitude);
+
+    /**
+     * Returns traffic incident data within the given bounding box.
+     * 
+     * <p>Default implementation throws {@link UnsupportedOperationException}.
+     * Providers that support incident data should override this method.
+     *
+     * @param bbox the geographic bounding box to query for incidents
+     * @return list of raw traffic incidents within the bounding box
+     * @throws TrafficApiUnavailableException if the provider is unreachable or returns an error
+     * @throws UnsupportedOperationException if the provider does not support incident data
+     */
+    default List<RawTrafficIncident> getIncidentData(BoundingBox bbox) {
+        throw new UnsupportedOperationException("Incident data not supported by this provider");
+    }
 }

@@ -61,6 +61,8 @@ The platform uses real-time traffic data to automatically detect congested inter
 ### 1. Congestion Detection
 The system continuously monitors traffic conditions using the TomTom Traffic Flow API. When an intersection's congestion score exceeds a configurable threshold (default: 0.7), it is automatically flagged as a candidate for traffic control.
 
+Users can also trigger on-demand traffic scans for their current location via the `/intersections/nearby/scan` endpoint, which discovers and scores intersections within a configurable radius.
+
 ### 2. Campaign Creation
 Admins review flagged intersections and confirm them. Confirmation auto-creates a crowdfunding campaign with a target amount and funding window. Drivers who use that intersection can contribute funds.
 
@@ -89,32 +91,39 @@ After a controller completes their assignment, drivers review their performance 
 CornerCrew is a monolithic Spring Boot application following a domain-driven modular structure. Each domain module (campaigns, assignments, intersections, etc.) contains its own entities, repositories, services, and controllers.
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                   REST API Layer                     │
-│  Auth │ Campaigns │ Funding │ Assignments │ Traffic  │
-├─────────────────────────────────────────────────────┤
-│                  Service Layer                       │
-│  JWT Auth │ Campaign Mgmt │ Payout │ Traffic Monitor │
-├─────────────────────────────────────────────────────┤
-│                  Data Layer                          │
-│  Spring Data JPA │ Hibernate Spatial │ Flyway        │
-├─────────────────────────────────────────────────────┤
-│              PostgreSQL + PostGIS                    │
-└─────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                          REST API Layer                              │
+│  Auth │ Campaigns │ Funding │ Assignments │ Traffic │ Notifications  │
+│  Campaign Map │ Commute Profiles │ Incidents │ User Location         │
+├──────────────────────────────────────────────────────────────────────┤
+│                         Service Layer                                │
+│  JWT Auth │ Campaign Mgmt │ Payout │ Traffic Monitor │ Predictive    │
+│  Notification Dispatch │ Incident Enrichment │ Commute Profiles      │
+├──────────────────────────────────────────────────────────────────────┤
+│                         Data Layer                                   │
+│  Spring Data JPA │ Hibernate Spatial │ Flyway                        │
+├──────────────────────────────────────────────────────────────────────┤
+│                     PostgreSQL (Alpine)                               │
+└──────────────────────────────────────────────────────────────────────┘
          │                              │
     ┌────┴────┐                   ┌─────┴─────┐
     │ TomTom  │                   │  Mapbox   │
     │ Traffic │                   │ Geocoding │
-    └─────────┘                   └───────────┘
+    │ + Incidents │               └───────────┘
+    └─────────┘
 ```
 
 Key architectural decisions:
-- **Stateless JWT authentication** — no server-side sessions
+- **Stateless JWT authentication** — no server-side sessions, proper 401 for unauthenticated and 403 for unauthorized requests
 - **Pessimistic locking** on campaign funding to prevent race conditions
 - **Caffeine caching** for geolocation data (24h TTL, 100 entries)
 - **Scheduled polling** for traffic congestion monitoring (configurable interval)
+- **On-demand location scanning** — users can scan their current area for congestion
+- **Predictive campaign drafting** — scheduled analysis of historical congestion patterns (daily at 2 AM)
+- **In-app notifications** — commute impact and job availability alerts with read/dismiss tracking
+- **Traffic incident enrichment** — live incidents labeled with nearest known intersection, with snapshot-based fallback
 - **Flyway migrations** for schema versioning
-- **PostGIS** for geographic/spatial data support
+- **PostgreSQL** for relational data (PostGIS not required — coordinates stored as plain doubles)
 
 ---
 
@@ -126,7 +135,7 @@ Key architectural decisions:
 | Framework | Spring Boot | 3.3.4 |
 | Language Support | Kotlin | 1.9.21 |
 | Build | Gradle (Kotlin DSL) | 8.13 |
-| Database | PostgreSQL + PostGIS | 16 |
+| Database | PostgreSQL | 16 (Alpine) |
 | ORM | Hibernate + Hibernate Spatial | 6.5.2 |
 | Migrations | Flyway | — |
 | Auth | JJWT | 0.12.5 |
@@ -159,10 +168,11 @@ cd theCornerCrewBE
 cp .env.example .env
 # Edit .env with your database credentials and API keys
 
-# Start PostgreSQL with PostGIS
-docker compose up -d db
+# Start everything (database + application)
+docker compose up --build -d
 
-# Run the application
+# Or start only the database and run locally
+docker compose up -d db
 ./gradlew bootRun
 ```
 
@@ -201,6 +211,14 @@ The API will be available at `http://localhost:8080`.
 | `app.traffic.congestion-threshold` | Score to auto-flag intersections | `0.7` |
 | `app.geolocation.intersection-cache-ttl-hours` | Geolocation cache duration | `24` |
 | `app.payout.rating-threshold` | Minimum avg rating for payout | `3.0` |
+| `app.traffic.free-flow-speed-kmh` | Free-flow speed for fallback delay derivation | `60` |
+| `app.notifications.commute-radius-km` | Proximity radius for commute matching | `2` |
+| `app.predictive.lookback-weeks` | Weeks of history for pattern detection | `4` |
+| `app.predictive.min-occurrences` | Minimum high-congestion occurrences to trigger pattern | `3` |
+| `app.predictive.default-target-amount` | Default funding target for auto-drafted campaigns | `5000.00` |
+| `app.predictive.cron` | Cron schedule for predictive drafting job | `0 0 2 * * *` |
+| `app.incidents.max-radius-km` | Maximum allowed radius for incident queries | `50` |
+| `app.incidents.label-proximity-meters` | Max distance to match incident to known intersection | `200` |
 
 ---
 
@@ -287,6 +305,16 @@ All protected endpoints require the `Authorization: Bearer <accessToken>` header
 | `POST` | `/intersections/candidates/{id}/dismiss` | ADMIN | Dismiss a flagged intersection |
 | `POST` | `/intersections/nearby/scan` | Any | Scan for nearby intersections by coordinates |
 
+**Nearby Scan Request:**
+```json
+{
+  "latitude": -26.295,
+  "longitude": 28.155,
+  "radiusDegrees": 0.01
+}
+```
+The `radiusDegrees` field is optional (default: 0.01, roughly 1.1 km). The endpoint discovers intersections via Mapbox reverse geocoding, fetches live congestion scores from TomTom, and returns all nearby intersections with their current status and scores.
+
 ### Infrastructure
 
 | Method | Endpoint | Description |
@@ -295,6 +323,51 @@ All protected endpoints require the `Authorization: Bearer <accessToken>` header
 | `GET` | `/actuator/info` | Application info |
 | `GET` | `/actuator/metrics` | Application metrics |
 | `GET` | `/swagger-ui` | Interactive API documentation |
+
+### Commute Profiles
+
+| Method | Endpoint | Role | Description |
+|--------|----------|------|-------------|
+| `PUT` | `/users/me/commute-profile` | DRIVER | Save or replace commute profile (201 created, 200 replaced) |
+| `GET` | `/users/me/commute-profile` | DRIVER | Get commute profile (404 if none) |
+| `DELETE` | `/users/me/commute-profile` | DRIVER | Delete commute profile (204) |
+
+### Notifications
+
+| Method | Endpoint | Role | Description |
+|--------|----------|------|-------------|
+| `GET` | `/notifications` | Any | List notifications (paginated, filterable by `type` and `read`) |
+| `GET` | `/notifications/unread-count` | Any | Get unread notification count |
+| `PATCH` | `/notifications/{id}/read` | Any | Mark notification as read |
+| `PATCH` | `/notifications/{id}/dismiss` | Any | Dismiss a notification |
+| `POST` | `/notifications/{id}/accept` | Any | Accept a JOB_AVAILABLE notification (creates application, returns 201) |
+| `POST` | `/notifications/{id}/decline` | Any | Decline a notification (marks dismissed) |
+
+### Notification Preferences
+
+| Method | Endpoint | Role | Description |
+|--------|----------|------|-------------|
+| `GET` | `/users/me/notification-preferences` | Any | Get notification preferences |
+| `PATCH` | `/users/me/notification-preferences` | Any | Update notification preferences |
+
+### User Location
+
+| Method | Endpoint | Role | Description |
+|--------|----------|------|-------------|
+| `PUT` | `/users/me/location` | Any | Set home location |
+| `GET` | `/users/me/location` | Any | Get home location (404 if not set) |
+
+### Campaign Map
+
+| Method | Endpoint | Role | Description |
+|--------|----------|------|-------------|
+| `GET` | `/campaigns/map` | Any | Get campaigns with geographic data (filterable by `statuses`, `latitude`, `longitude`, `radiusKm`) |
+
+### Traffic Incidents
+
+| Method | Endpoint | Role | Description |
+|--------|----------|------|-------------|
+| `GET` | `/traffic/incidents` | Any | Get traffic incidents near a location (`latitude`, `longitude`, optional `radiusKm` default 5) |
 
 ---
 
@@ -340,6 +413,30 @@ All protected endpoints require the `Authorization: Bearer <accessToken>` header
               │ shift   │ │ comment │ │ provider  │
               │ times   │ └─────────┘ │ measured  │
               └─────────┘             └───────────┘
+
+┌──────────────────┐   ┌──────────────────┐   ┌──────────────────────┐
+│ commute_profiles │   │  notifications   │   │  recurrence_patterns │
+│                  │   │                  │   │                      │
+│ id               │   │ id               │   │ id                   │
+│ driver_id (FK)   │   │ user_id (FK)     │   │ intersection_id (FK) │
+│ origin_lat/lng   │   │ type             │   │ day_of_week          │
+│ dest_lat/lng     │   │ title, body      │   │ time_bucket_start    │
+│ departure_start  │   │ metadata (JSONB) │   │ time_bucket_end      │
+│ departure_end    │   │ action_url       │   │ occurrence_count     │
+│ created_at       │   │ created_at       │   │ avg_congestion_score │
+│ updated_at       │   │ read_at          │   │ detected_at          │
+└──────────────────┘   │ dismissed_at     │   │ pattern_data (JSONB) │
+                       └──────────────────┘   └──────────────────────┘
+
+┌──────────────────────┐
+│ campaign_intersections│
+│                      │
+│ id                   │
+│ campaign_id (FK)     │
+│ intersection_id (FK) │
+│ UNIQUE(campaign,     │
+│   intersection)      │
+└──────────────────────┘
 ```
 
 ### Roles
@@ -378,6 +475,13 @@ All protected endpoints require the `Authorization: Bearer <accessToken>` header
 | `COMPLETED` | All shifts completed, awaiting review |
 | `PAID` | Payout processed |
 
+### Notification Types
+
+| Type | Description |
+|------|-------------|
+| `COMMUTE_IMPACT` | Sent to drivers when a campaign opens near their commute route |
+| `JOB_AVAILABLE` | Sent to controllers when a new campaign opens for applications |
+
 ---
 
 ## Business Rules
@@ -410,6 +514,29 @@ All protected endpoints require the `Authorization: Bearer <accessToken>` header
 - Flagging is idempotent — already flagged/confirmed/dismissed intersections are skipped
 - Confirming a flagged intersection auto-creates a draft campaign (R5,000 target, 30-day window)
 
+### Notifications
+- When a campaign transitions to OPEN, drivers with commute profiles near the campaign's intersections receive COMMUTE_IMPACT notifications (if commute notifications are enabled)
+- When a campaign transitions to OPEN, all controllers with job notifications enabled receive JOB_AVAILABLE notifications
+- Proximity matching uses Haversine cross-track distance against the driver's commute route (configurable radius, default 2 km)
+- Notifications are append-only — only `readAt` and `dismissedAt` can be updated after creation
+- Users can only read/dismiss their own notifications (403 on ownership violation)
+- Controllers can accept JOB_AVAILABLE notifications to create a PENDING application directly
+- Notification failure during campaign approval does not roll back the campaign status change (best-effort)
+
+### Predictive Campaign Drafting
+- A scheduled job (default: daily at 2 AM) analyzes historical congestion snapshots
+- Snapshots are grouped by intersection, day-of-week, and 2-hour time bucket
+- A recurrence pattern is detected when high-congestion snapshots (score ≥ threshold) occur at least `minOccurrences` times (default: 3) within the lookback window (default: 4 weeks)
+- For each detected pattern, a DRAFT campaign is auto-created if no active campaign (DRAFT/OPEN/FUNDED) already covers the same intersection and time window
+- The algorithm is deterministic — same input always produces the same patterns
+
+### Traffic Incidents
+- The `/traffic/incidents` endpoint returns real-time incidents from TomTom, enriched with nearest intersection labels (within 200m)
+- If the TomTom API is unavailable, the system falls back to recent CongestionSnapshot data, deriving speed from `freeFlowSpeedKmh * (1 - congestionScore)`
+- Speed is clamped to [0, 200] km/h, delay to [0, 1440] minutes
+- Maximum query radius is 50 km; default is 5 km
+- If no coordinates are provided, the user's stored home location is used; if neither exists, a 400 error is returned
+
 ---
 
 ## Security
@@ -436,8 +563,11 @@ All protected endpoints require the `Authorization: Bearer <accessToken>` header
 ### TomTom Traffic Flow API
 Used for real-time congestion monitoring. The system polls TomTom at a configurable interval to fetch congestion scores for intersections within the monitored area.
 
+### TomTom Traffic Incidents API
+Used for real-time traffic incident data. The `/traffic/incidents` endpoint queries TomTom for incidents within a bounding box, enriches them with nearest intersection labels, and computes estimated delays. Falls back to historical CongestionSnapshot data when the API is unavailable.
+
 - **Documentation**: https://developer.tomtom.com/traffic-api
-- **Configuration**: Set `TRAFFIC_API_KEY` in your `.env` file
+- **Configuration**: Set `TRAFFIC_API_KEY` in your `.env` file (shared key for both Flow and Incidents APIs)
 
 ### Mapbox Geocoding API
 Used to resolve intersection coordinates within a geographic bounding box. Results are cached for 24 hours to minimize API calls.
@@ -449,7 +579,7 @@ Used to resolve intersection coordinates within a geographic bounding box. Resul
 
 ## Testing
 
-The project has 37 test files covering unit tests, integration tests, and property-based tests.
+The project has 50+ test files covering unit tests, integration tests, and property-based tests.
 
 ### Running Tests
 
@@ -483,6 +613,25 @@ The project has 37 test files covering unit tests, integration tests, and proper
 - Intersection status transitions follow the state machine
 - Review uniqueness per driver per assignment
 - Geolocation cache hits on repeated queries
+- Commute profile persistence round-trip and upsert semantics
+- Coordinate validation rejects out-of-range inputs
+- Notification persistence invariants (append-only)
+- Notification filtering correctness by type and read status
+- Notification ordering by creation time descending
+- Unread count consistency
+- Commute impact notification eligibility (profile + enabled + proximity)
+- Controller job notification eligibility
+- Campaign map proximity filter (Haversine)
+- Funding percentage computation
+- Traffic incident enrichment and clamping
+- Estimated delay formatting
+- Fallback speed derivation from congestion score
+- Recurrence pattern detection threshold
+- Pattern average score invariant
+- Snapshot grouping correctness
+- Pattern detection determinism
+- Predictive draft idempotence
+- Auto-drafted campaign window computation
 
 ---
 
@@ -491,22 +640,24 @@ The project has 37 test files covering unit tests, integration tests, and proper
 ### Docker Compose (Development)
 
 ```bash
-# Start everything (database + application)
-docker compose up -d
+# Start everything (database + application) with build
+docker compose up --build -d
 
 # Start only the database
 docker compose up -d db
 
-# View logs
-docker compose logs -f app
+# View application logs
+docker logs -f cc-backend
 
 # Stop everything
 docker compose down
 ```
 
+The `app` service uses a multi-stage Alpine-based Dockerfile — no need to pre-build the JAR locally. The database uses `postgres:16-alpine` for native ARM64 support on Apple Silicon.
+
 ### Docker (Production)
 
-The multi-stage Dockerfile produces a minimal JRE-based image:
+The multi-stage Dockerfile produces a minimal Alpine JRE image (~130 MB):
 
 ```bash
 # Build the image
@@ -560,6 +711,14 @@ All errors return a consistent JSON structure:
 | `NO_REVIEWS` | 422 | Processing payout with no reviews |
 | `TRAFFIC_API_UNAVAILABLE` | 503 | TomTom API unreachable |
 | `GEOLOCATION_API_UNAVAILABLE` | 503 | Mapbox API unreachable |
+| `NOTIFICATION_NOT_FOUND` | 404 | Notification ID does not exist |
+| `NOTIFICATION_FORBIDDEN` | 403 | User attempting to access another user's notification |
+| `CAMPAIGN_NOT_ACCEPTING` | 422 | Accepting notification for non-OPEN/FUNDED campaign |
+| `COMMUTE_PROFILE_NOT_FOUND` | 404 | Driver has no stored commute profile |
+| `INVALID_COORDINATES` | 400 | Coordinates outside valid range |
+| `INVALID_TIME_WINDOW` | 400 | Departure start time >= end time |
+| `RADIUS_EXCEEDS_MAX` | 400 | Incident query radius exceeds 50 km |
+| `LOCATION_REQUIRED` | 400 | No coordinates provided and no stored location |
 | `VALIDATION_ERROR` | 400 | Request body validation failure |
 | `AUTHENTICATION_FAILED` | 401 | Invalid or expired token |
 | `INTERNAL_ERROR` | 500 | Unexpected server error |
@@ -583,12 +742,17 @@ cornercrew-backend/
     │   ├── java/com/cornercrew/app/
     │   │   ├── CornerCrewApplication.java
     │   │   ├── auth/                  # JWT authentication & registration
-    │   │   ├── user/                  # User entity, roles, UserDetailsService
-    │   │   ├── campaign/              # Campaigns, funding, contributions
+    │   │   ├── user/                  # User entity, roles, location preferences
+    │   │   ├── campaign/              # Campaigns, funding, contributions, campaign-intersections
+    │   │   ├── campaignmap/           # Geographic campaign visualization
     │   │   ├── assignment/            # Applications, assignments, shifts, reviews, payouts
     │   │   ├── intersection/          # Intersections, congestion monitoring, candidates
-    │   │   ├── traffic/               # TomTom traffic API adapter
+    │   │   ├── traffic/               # TomTom traffic API adapter, incident data
     │   │   ├── geolocation/           # Mapbox geocoding API adapter
+    │   │   ├── notification/          # Notifications, preferences, accept/decline
+    │   │   ├── commuteprofile/        # Driver commute profile management
+    │   │   ├── predictive/            # Recurrence pattern detection, campaign drafting
+    │   │   ├── incident/              # Traffic incident service, enrichment, fallback
     │   │   ├── config/                # Security, cache, properties
     │   │   └── common/                # Exceptions, global error handler
     │   └── resources/

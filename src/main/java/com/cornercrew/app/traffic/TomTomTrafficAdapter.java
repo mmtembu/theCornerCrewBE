@@ -10,7 +10,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
 import java.time.Instant;
-import java.util.Map;
+import java.util.List;
+import java.util.Objects;
+import java.util.UUID;
 
 /**
  * TomTom Traffic Flow API adapter implementation.
@@ -37,6 +39,7 @@ public class TomTomTrafficAdapter implements TrafficApiAdapter {
     private static final Logger log = LoggerFactory.getLogger(TomTomTrafficAdapter.class);
     
     private static final String TOMTOM_TRAFFIC_FLOW_API_BASE = "https://api.tomtom.com/traffic/services/4/flowSegmentData";
+    private static final String TOMTOM_INCIDENTS_API_BASE = "https://api.tomtom.com/traffic/services/5/incidentDetails";
     private static final String API_VERSION = "absolute/10/json";
     
     private final RestClient restClient;
@@ -144,6 +147,64 @@ public class TomTomTrafficAdapter implements TrafficApiAdapter {
         return "FREE_FLOW";
     }
 
+    @Override
+    public List<RawTrafficIncident> getIncidentData(BoundingBox bbox) {
+        try {
+            String endpoint = String.format("?bbox=%f,%f,%f,%f&key=%s&fields={currentSpeed,events,startTime,delay}&language=en-US&timeValidityFilter=present",
+                    bbox.southLat(), bbox.westLng(), bbox.northLat(), bbox.eastLng(), apiKey);
+
+            log.debug("Fetching TomTom incident data for bbox: ({},{}) to ({},{})",
+                    bbox.southLat(), bbox.westLng(), bbox.northLat(), bbox.eastLng());
+
+            // Build a separate RestClient for incidents API
+            TomTomIncidentsResponse response = RestClient.builder()
+                    .baseUrl(TOMTOM_INCIDENTS_API_BASE)
+                    .build()
+                    .get()
+                    .uri(endpoint)
+                    .retrieve()
+                    .onStatus(HttpStatusCode::isError, (request, resp) -> {
+                        log.warn("TomTom Incidents API error: HTTP {}", resp.getStatusCode().value());
+                        throw new TrafficApiUnavailableException("TomTom Incidents API error: " + resp.getStatusCode());
+                    })
+                    .body(TomTomIncidentsResponse.class);
+
+            if (response == null || response.incidents() == null) {
+                return List.of();
+            }
+
+            return response.incidents().stream()
+                    .map(this::toRawIncident)
+                    .filter(Objects::nonNull)
+                    .toList();
+        } catch (TrafficApiUnavailableException e) {
+            throw e;
+        } catch (Exception e) {
+            log.warn("Failed to fetch TomTom incident data: {}", e.getMessage());
+            throw new TrafficApiUnavailableException("Failed to connect to TomTom Incidents API", e);
+        }
+    }
+
+    private RawTrafficIncident toRawIncident(TomTomIncident incident) {
+        if (incident.geometry() == null || incident.geometry().coordinates() == null
+                || incident.geometry().coordinates().isEmpty()) {
+            return null;
+        }
+        List<Double> firstCoord = incident.geometry().coordinates().get(0);
+        if (firstCoord.size() < 2) return null;
+
+        TomTomProperties props = incident.properties();
+        return new RawTrafficIncident(
+            props != null ? props.id() : UUID.randomUUID().toString(),
+            firstCoord.get(1), // latitude
+            firstCoord.get(0), // longitude (GeoJSON is [lng, lat])
+            props != null ? props.roadName() : "Unknown road",
+            props != null && props.startTime() != null ? props.startTime() : Instant.now(),
+            props != null ? props.currentSpeed() : 0.0,
+            props != null ? props.delay() : 0
+        );
+    }
+
     /**
      * TomTom Traffic Flow API response structure.
      */
@@ -158,5 +219,26 @@ public class TomTomTrafficAdapter implements TrafficApiAdapter {
             double currentTravelTime,
             double freeFlowTravelTime,
             double confidence
+    ) {}
+
+    /**
+     * TomTom Traffic Incidents API response structure.
+     */
+    private record TomTomIncidentsResponse(List<TomTomIncident> incidents) {}
+
+    private record TomTomIncident(
+        String type,
+        TomTomGeometry geometry,
+        TomTomProperties properties
+    ) {}
+
+    private record TomTomGeometry(String type, List<List<Double>> coordinates) {}
+
+    private record TomTomProperties(
+        String id,
+        double currentSpeed,
+        int delay,
+        String roadName,
+        Instant startTime
     ) {}
 }

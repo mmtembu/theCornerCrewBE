@@ -38,6 +38,7 @@ app:
     api-key: ${TRAFFIC_API_KEY:}
     polling-interval-ms: 60000
     congestion-threshold: 0.7
+    free-flow-speed-kmh: 60
     neighborhood:
       south-lat: -26.305
       west-lng: 28.145
@@ -49,3 +50,13 @@ app:
     intersection-cache-ttl-hours: 24
   payout:
     rating-threshold: 3.0
+  notifications:
+    commute-radius-km: 2
+  predictive:
+    lookback-weeks: 4
+    min-occurrences: 3
+    default-target-amount: 5000.00
+    cron: "0 0 2 * * *"
+  incidents:
+    max-radius-km: 50
+    label-proximity-meters: 200

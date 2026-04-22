@@ -5,6 +5,7 @@ import com.cornercrew.app.intersection.Intersection;
 import com.cornercrew.app.intersection.IntersectionRepository;
 import com.cornercrew.app.intersection.IntersectionStatus;
 import com.cornercrew.app.intersection.IntersectionType;
+import com.cornercrew.app.notification.NotificationService;
 import jakarta.persistence.EntityNotFoundException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -36,6 +37,9 @@ class CampaignServiceImplTest {
 
     @Mock
     private IntersectionRepository intersectionRepository;
+
+    @Mock
+    private NotificationService notificationService;
 
     @InjectMocks
     private CampaignServiceImpl campaignService;

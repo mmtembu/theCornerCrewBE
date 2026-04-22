@@ -32,6 +32,18 @@ public class User implements UserDetails {
     @Column(nullable = false)
     private OffsetDateTime createdAt = OffsetDateTime.now();
 
+    @Column(name = "home_latitude")
+    private Double homeLatitude;
+
+    @Column(name = "home_longitude")
+    private Double homeLongitude;
+
+    @Column(name = "commute_notifications_enabled", nullable = false)
+    private boolean commuteNotificationsEnabled = true;
+
+    @Column(name = "job_notifications_enabled", nullable = false)
+    private boolean jobNotificationsEnabled = true;
+
     public Long getId() { return id; }
     public String getEmail() { return email; }
     public void setEmail(String email) { this.email = email; }
@@ -42,6 +54,14 @@ public class User implements UserDetails {
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
     public OffsetDateTime getCreatedAt() { return createdAt; }
+    public Double getHomeLatitude() { return homeLatitude; }
+    public void setHomeLatitude(Double homeLatitude) { this.homeLatitude = homeLatitude; }
+    public Double getHomeLongitude() { return homeLongitude; }
+    public void setHomeLongitude(Double homeLongitude) { this.homeLongitude = homeLongitude; }
+    public boolean isCommuteNotificationsEnabled() { return commuteNotificationsEnabled; }
+    public void setCommuteNotificationsEnabled(boolean commuteNotificationsEnabled) { this.commuteNotificationsEnabled = commuteNotificationsEnabled; }
+    public boolean isJobNotificationsEnabled() { return jobNotificationsEnabled; }
+    public void setJobNotificationsEnabled(boolean jobNotificationsEnabled) { this.jobNotificationsEnabled = jobNotificationsEnabled; }
 
     @Override public Collection<? extends GrantedAuthority> getAuthorities() {
         return List.of(new SimpleGrantedAuthority("ROLE_" + role.name()));
